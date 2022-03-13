@@ -1,0 +1,199 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sqlite3.h>
+#include <SPI.h>
+#include <FS.h>
+#include "SPIFFS.h"
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+AsyncWebServer server(80);
+const char* ssid = "Airtel_9479586009";  
+const char* password = "rohit571";  
+String getmessage="";
+String getpara="";
+
+const char* input_parameter = "input_string";
+
+const char index_html[] PROGMEM = R"rawliteral(
+
+<!DOCTYPE HTML><html><head>
+  <title>HTML Form to Input Data</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html {font-family: Times New Roman; display: inline-block; text-align: center;}
+    h2 {font-size: 3.0rem; color: #FF0000;}
+  </style>
+  </head><body>
+  <h2>HTML Form to Input Data</h2> 
+  <h3>examples</h3> 
+  <h4>CREATE TABLE test1 (id INTEGER, content);</h4> 
+  <h5>INSERT INTO test1 VALUES (1, 'Hello, World from test1')</h5> 
+  <h6>SELECT * FROM test1</h6> 
+  <h6> UPDATE test1 SET content = this_is_rohit  WHERE condition;</h6>
+  
+  <form action="/get">
+    Enter your query(update/create/delete/select): <input type="text" name="input_string">
+    <input type="submit" value="Submit">
+  </form>
+</body></html>)rawliteral";
+
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
+
+#define FORMAT_SPIFFS_IF_FAILED true
+
+const char* data = "Callback function called";
+static int callback(void *data, int argc, char **argv, char **azColName) {
+   int i;
+   Serial.printf("%s: ", (const char*)data);
+   for (i = 0; i<argc; i++){
+       Serial.printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+   }
+   Serial.printf("\n");
+   return 0;
+}
+
+int db_open(const char *filename, sqlite3 **db) {
+   int rc = sqlite3_open(filename, db);
+   if (rc) {
+       Serial.printf("Can't open database: %s\n", sqlite3_errmsg(*db));
+       return rc;
+   } else {
+       Serial.printf("Opened database successfully\n");
+   }
+   return rc;
+}
+
+char *zErrMsg = 0;
+int db_exec(sqlite3 *db, const char *sql) {
+   Serial.println(sql);
+   long start = micros();
+   int rc = sqlite3_exec(db, sql, callback, (void*)data, &zErrMsg);
+   if (rc != SQLITE_OK) {
+       Serial.printf("SQL error: %s\n", zErrMsg);
+       sqlite3_free(zErrMsg);
+   } else {
+       Serial.printf("Operation done successfully\n");
+   }
+   Serial.print(F("Time taken:"));
+   Serial.println(micros()-start);
+   return rc;
+}
+
+void setup() {
+
+   Serial.begin(115200);
+   Serial.println("Try Connecting to ");
+  Serial.println(ssid);
+
+  // Connect to your wi-fi modem
+  WiFi.begin(ssid, password);
+
+  // Check wi-fi is connected to wi-fi network
+  while (WiFi.status() != WL_CONNECTED) {
+  delay(1000);
+  Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected successfully");
+  Serial.print("Got IP: ");
+  Serial.println(WiFi.localIP());  //Show ESP32 IP on serial
+
+ server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String input_messages;
+    String input_parameters;
+label:
+    sqlite3 *db1;
+   int rc;
+
+   if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
+       Serial.println("Failed to mount file system");
+       return;
+   }
+
+   // list SPIFFS contents
+   File root = SPIFFS.open("/");
+   if (!root) {
+       Serial.println("- failed to open directory");
+       return;
+   }
+   if (!root.isDirectory()) {
+       Serial.println(" - not a directory");
+       return;
+   }
+   File file = root.openNextFile();
+   while (file) {
+       if (file.isDirectory()) {
+           Serial.print("  DIR : ");
+           Serial.println(file.name());
+       } else {
+           Serial.print("  FILE: ");
+           Serial.print(file.name());
+           Serial.print("\tSIZE: ");
+           Serial.println(file.size());
+       }
+       file = root.openNextFile();
+   }
+
+   // remove existing file
+   SPIFFS.remove("/test1.db");
+
+
+   sqlite3_initialize();
+
+   if (db_open("/spiffs/test1.db", &db1))
+       return;
+       
+    if (request->hasParam(input_parameter)) {
+      input_messages = request->getParam(input_parameter)->value();
+
+
+
+    
+   rc = db_exec(db1, query().c_str());
+   if (rc != SQLITE_OK) {
+    goto label;
+       sqlite3_close(db1);
+ goto label;
+   }
+   
+
+   sqlite3_close(db1);
+
+      input_parameters = input_parameter;
+    }
+    else {
+      input_messages = "No message sent";
+      input_parameters = "none";
+    }
+    Serial.println(input_messages);
+    getmessage=input_messages;
+    getpara=input_parameters;
+    request->send(200, "text/html", "HTTP GET request sent to your ESP on input field ("+ input_parameters + ") with value: " + input_messages + "<br><a href=\"/\">Return to Home Page</a>");
+  });
+  
+  server.onNotFound(notFound);
+  server.begin();
+  delay(100); 
+   
+   
+}
+
+String Insert()
+{
+  return "INSERT INTO test1 VALUES (1, 'Hello, World from test1');";
+  }
+  
+  String query(){
+    return getmessage;
+   Serial.println(getmessage);
+  }
+
+void loop() {
+   
+}
